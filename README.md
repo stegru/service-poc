@@ -13,7 +13,12 @@ Able to start another node process running on the desktop as the current user ([
 * Also pass the file handles for the pipe.
 
 ## Anonymous Pipe
-A "pipe" is two streams; one write and one read. To make communication
+A "pipe" is two streams; one write and one read. To make communication full-duplex, two pipes are used:
+```
+         Service      Child
+Pipe1    write    =>  read 
+Pipe2    read     <=  write 
+```
 
 * There was no problem creating the pipe ([createPipes](https://github.com/stegru/service-poc/blob/02159a6396deefe03a3039dd1ed126f166f456d5/test-service.js#L107))
 * Making the inheritable, and passing it to a new process was harder than it should be ([inheritHandles](https://github.com/stegru/service-poc/blob/02159a6396deefe03a3039dd1ed126f166f456d5/test-service.js#L152))
