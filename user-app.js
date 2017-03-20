@@ -1,38 +1,39 @@
 process.on('uncaughtException', function(err) {
-    console.error((err && err.stack) ? err.stack : err);
+    console.error("child", (err && err.stack) ? err.stack : err);
 });
 
 var cp = require("child_process"),
     fs = require("fs"),
-    ref = require("ref"),
+    net = require("net");
+
+
+//var log = fs.createWriteStream('c:\\tmp\\user-app.log');
+//process.stdout.write = process.stderr.write = log.write.bind(log);
+
+var ref = require("ref"),
     winapi = require("./winapi.js");
 
 
-var log = fs.createWriteStream('c:\\tmp\\user-app.log');
-process.stdout.write = process.stderr.write = log.write.bind(log);
-
-console.log("Hello from", __filename);
+console.log("Hello from the client app", __filename);
 console.log("whoami:", cp.execSync("whoami", { encoding: "utf-8" }));
 console.log(process.argv);
-var readHandle = parseInt(process.argv[2]),
-    writeHandle = parseInt(process.argv[3]);
+var pipeName = process.argv[2];
 
-console.log("handles:", readHandle, writeHandle);
+console.log("pipe:", pipeName);
 
-var readFD = winapi.msvcrt._open_osfhandle(readHandle, 0),
-    writeFD = winapi.msvcrt._open_osfhandle(writeHandle, 0);
-console.log("fds:", readFD, writeFD);
-
-var inputStream = fs.createReadStream(null, { fd: readFD });
-var outputStream = fs.createWriteStream(null, { fd: writeFD });
-
-inputStream.on("data", function (chunk) {
-    console.log("GOT:", chunk);
-    outputStream.write("hello");
+var pipe = net.connect(pipeName, function () {
+    console.log("client connect");
+    pipe.write("hello!\n");
 });
-inputStream.on("close", function () {
-    console("closed");
+pipe.setEncoding("utf8");
+pipe.on("data", function (data) {
+    console.log("client data:", data);
+    pipe.write(data);
 });
 
-outputStream.write("hi");
+pipe.on("end", function (data) {
+    console.log("client end");
+});
+
+setTimeout(console.log, 5000);
 

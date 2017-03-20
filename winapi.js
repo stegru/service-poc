@@ -13,7 +13,8 @@ winapi.types = {
     WORD: "uint",
     DWORD: "ulong",
     ULONG: "ulong",
-    LPTSTR: "char*"
+    LPTSTR: "char*",
+    Enum: "uint"
 };
 
 winapi.ERROR_INSUFFICIENT_BUFFER = 0x7a;
@@ -60,6 +61,34 @@ winapi.SECURITY_ATTRIBUTES = new Struct([
     [t.BOOL, "bInheritHandle"]
 ]);
 
+// https://msdn.microsoft.com/library/aa446627
+winapi.SECURITY_ATTRIBUTES = new Struct([
+    [t.DWORD, "grfAccessPermissions"],
+    [t.Enum, "grfAccessMode"],
+    [t.DWORD, "grfInheritance"]
+    [t.BOOL, "bInheritHandle"]
+]);
+
+
+
+// https://msdn.microsoft.com/library/ms684342
+winapi.OVERLAPPED = new Struct([
+    [t.LP, "Internal"],
+    [t.LP, "InternalHigh"],
+    [t.DWORD, "Offset"],
+    [t.DWORD, "OffsetHigh"],
+    // Trustee field:
+    [t.LP, "pMultipleTrustee"],
+    [t.Enum, "MultipleTrusteeOperation"],
+    [t.Enum, "TrusteeForm"],
+    [t.Enum, "TrusteeType"],
+    [t.LPTSTR, "ptstrName"],
+]);
+
+winapi.FileIOCompletionRoutine = function (callback) {
+    return ffi.Callback(t.BOOL, [t.DWORD, t.DWORD, t.LP], callback);
+};
+
 winapi.kernel32 = ffi.Library("kernel32", {
     // https://msdn.microsoft.com/library/aa383835
     "WTSGetActiveConsoleSessionId": [
@@ -70,6 +99,9 @@ winapi.kernel32 = ffi.Library("kernel32", {
     ],
     "GetLastError": [
         "int32", []
+    ],
+    "SleepEx": [
+        t.DWORD, [t.DWORD, t.BOOL]
     ],
     // https://msdn.microsoft.com/library/aa365152
     "CreatePipe": [
@@ -86,9 +118,58 @@ winapi.kernel32 = ffi.Library("kernel32", {
     "ReadFile": [
         t.BOOL, [ t.HANDLE, t.LP, t.DWORD, t.LP, t.LP ]
     ],
+    // https://msdn.microsoft.com/library/aa365468
+    "ReadFileEx": [
+        t.BOOL, [ t.HANDLE, t.LP, t.DWORD, t.LP, t.LP ]
+    ],
+    "WriteFileEx": [
+        t.BOOL, [ t.HANDLE, t.LP, t.DWORD, t.LP, t.LP ]
+    ],
+    "WriteFile": [
+        t.BOOL, [ t.HANDLE, t.LP, t.DWORD, t.LP, t.LP ]
+    ],
     "CreateFileA": [
         t.HANDLE, [ "char*", t.DWORD, t.DWORD, t.LP, t.DWORD, t.DWORD, t.HANDLE ]
+    ],
+    "CreateEventA": [
+        t.HANDLE, [ t.LP, t.BOOL, t.BOOL, t.LPTSTR ]
+    ],
+    // https://msdn.microsoft.com/library/ms682425
+    // ANSI version used due to laziness
+    "CreateProcessA": [
+        t.BOOL, [
+            t.LPTSTR,  // LPCTSTR               lpApplicationName,
+            t.LPTSTR,  // LPTSTR                lpCommandLine,
+            t.LP,      // LPSECURITY_ATTRIBUTES lpProcessAttributes,
+            t.LP,      // LPSECURITY_ATTRIBUTES lpThreadAttributes,
+            t.BOOL,    // BOOL                  bInheritHandles,
+            t.DWORD,   // DWORD                 dwCreationFlags,
+            t.LP,      // LPVOID                lpEnvironment,
+            t.LP,      // LPCTSTR               lpCurrentDirectory,
+            t.LP,      // LPSTARTUPINFO         lpStartupInfo,
+            t.LP       // LPPROCESS_INFORMATION lpProcessInformation
+        ]
+    ],
+    "CreateNamedPipeA": [
+        t.HANDLE, [
+            t.LPTSTR,  // LPCTSTR               lpName,
+            t.DWORD,   // DWORD                 dwPipeMode,
+            t.DWORD,   // DWORD                 nMaxInstances,
+            t.DWORD,   // DWORD                 nOutBufferSize,
+            t.DWORD,   // DWORD                 nInBufferSize,
+            t.DWORD,   // DWORD                 nDefaultTimeOut,
+            t.DWORD,   // DWORD                 dwOpenMode,
+            t.LP       // LPSECURITY_ATTRIBUTES lpSecurityAttributes
+        ]
+    ],
+    "ConnectNamedPipe": [
+        t.BOOL, [ t.HANDLE, t.LP ]
+    ],
+    // https://msdn.microsoft.com/library/ms687036
+    "WaitForSingleObjectEx": [
+        t.DWORD, [ t.HANDLE, t.DWORD, t.BOOL ]
     ]
+
 });
 
 winapi.wtsapi32 = ffi.Library("wtsapi32", {
@@ -126,6 +207,10 @@ winapi.advapi32 = ffi.Library("advapi32", {
             t.LP,      // LPSTARTUPINFO         lpStartupInfo,
             t.LP       // LPPROCESS_INFORMATION lpProcessInformation
         ]
+    ],
+    // https://msdn.microsoft.com/library/aa379576
+    "SetEntriesInAcl": [
+        t.DWORD, [ t.ULONG, t.LP,  t.LP,  t.LP ]
     ]
 });
 
