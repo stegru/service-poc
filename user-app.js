@@ -17,11 +17,12 @@ var ref = require("ref"),
 console.log("Hello from the client app", __filename);
 console.log("whoami:", cp.execSync("whoami", { encoding: "utf-8" }));
 console.log(process.argv);
-var pipeName = process.argv[2];
+var ip = process.argv[2];
+var port = parseInt(process.argv[3]);
 
-console.log("pipe:", pipeName);
+console.log("connecting to ", ip + ":" + port);
 
-var pipe = net.connect(pipeName, function () {
+var pipe = net.connect(port, ip, function () {
     console.log("client connect");
     pipe.write("hello!\n");
 });

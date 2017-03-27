@@ -1,6 +1,8 @@
 var ffi = require("ffi"),
     ref = require("ref"),
-    Struct = require("ref-struct");
+    Struct = require("ref-struct"),
+    arrayType = require("ref-array");
+
 
 var winapi = {};
 
@@ -13,6 +15,7 @@ winapi.types = {
     WORD: "uint",
     DWORD: "ulong",
     ULONG: "ulong",
+    PULONG: "ulong*",
     LPTSTR: "char*",
     Enum: "uint"
 };
@@ -20,6 +23,8 @@ winapi.types = {
 winapi.ERROR_INSUFFICIENT_BUFFER = 0x7a;
 winapi.PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x20002; // (ProcThreadAttributeHandleList | PROC_THREAD_ATTRIBUTE_INPUT)
 winapi.EXTENDED_STARTUPINFO_PRESENT = 0x80000;
+
+winapi.MIB_TCP_STATE_ESTAB = 5; // https://msdn.microsoft.com/library/bb485761
 
 var t = winapi.types;
 
@@ -65,7 +70,7 @@ winapi.SECURITY_ATTRIBUTES = new Struct([
 winapi.SECURITY_ATTRIBUTES = new Struct([
     [t.DWORD, "grfAccessPermissions"],
     [t.Enum, "grfAccessMode"],
-    [t.DWORD, "grfInheritance"]
+    [t.DWORD, "grfInheritance"],
     [t.BOOL, "bInheritHandle"]
 ]);
 
@@ -83,6 +88,37 @@ winapi.OVERLAPPED = new Struct([
     [t.Enum, "TrusteeForm"],
     [t.Enum, "TrusteeType"],
     [t.LPTSTR, "ptstrName"],
+]);
+
+
+/**
+ * Creates a MIB_TCPTABLE2 struct with a given buffer.
+ * https://msdn.microsoft.com/library/bb485772
+ *
+ * @param tableSize The size of the whole structure, in bytes.
+ * @return {Struct}
+ */
+winapi.createMIBTcpTable2 = function (data) {
+
+    // get dwNumEntries for the row count.
+    var rowCount = data.readUInt32LE(0);
+    var MIB_TCPTABLE2 = new Struct([
+        [t.DWORD, "dwNumEntries"],
+        [arrayType(winapi.MIB_TCPROW2, rowCount), "table"]
+    ]);
+
+    return new MIB_TCPTABLE2(data);
+};
+
+// https://msdn.microsoft.com/library/bb485761
+winapi.MIB_TCPROW2 = new Struct([
+    [t.DWORD, "dwState"],
+    [t.DWORD, "dwLocalAddr"],
+    [t.DWORD, "dwLocalPort"],
+    [t.DWORD, "dwRemoteAddr"],
+    [t.DWORD, "dwRemotePort"],
+    [t.DWORD, "dwOwningPid"],
+    [t.Enum, "dwOffloadState"]
 ]);
 
 winapi.FileIOCompletionRoutine = function (callback) {
@@ -207,10 +243,14 @@ winapi.advapi32 = ffi.Library("advapi32", {
             t.LP,      // LPSTARTUPINFO         lpStartupInfo,
             t.LP       // LPPROCESS_INFORMATION lpProcessInformation
         ]
-    ],
-    // https://msdn.microsoft.com/library/aa379576
-    "SetEntriesInAcl": [
-        t.DWORD, [ t.ULONG, t.LP,  t.LP,  t.LP ]
+    ]
+});
+
+// IP helper API
+winapi.iphlpapi = ffi.Library("iphlpapi", {
+    // https://msdn.microsoft.com/library/bb408406
+    "GetTcpTable2": [
+        t.ULONG, [ t.LP, t.PULONG, t.BOOL ]
     ]
 });
 
