@@ -1,19 +1,34 @@
 # service-poc
 Proof of concept for running a service, and starting a child process in the context of the current user.
 
-## Named pipes
-This branch experiments with using named pipes.
+## Sockets
+This branch experiments with using sockets.
 
-### node.js
+* Only binding to 127.0.0.1, blocking outsiders.
+* Secured by inspecting the TCP table and verifying the PID at the other end is the child process.
+* An ephemeral port is used to guard against squatting.
+* Can be used in a way that's natural to node (it's asynchronous).
+
+```javascript
+server.listen(0, "127.0.0.1", function () {
+    port = server.address().port;
+});
+```
+
+
+## Other IPC methods
+
+### Named pipes (node.js built-in) 
 Name pipe support is built into node, but accepts any process without the ability to identify/restrict/validate the client.
 ```javascript
 server.listen("\\\\?\\pipe\\mypipe");
 ```
 
-### Windows API
+### Named pipes (Windows API)
 Able to secure the pipe, but not able to use it in an async manner. Requires polling/waiting even when using the asynchronous API functions [ReadFileEx](https://msdn.microsoft.com/library/aa365468).
 
-## Anonymous Pipe
+
+### Anonymous Pipe
 Unable to use anonymous pipes, because the handles can't be shared over different sessions.
  [CreateProcessAsUser](https://msdn.microsoft.com/library/ms682429): You cannot inherit handles across sessions. Additionally, if this parameter is TRUE, you must create the process in the same session as the caller.
 
