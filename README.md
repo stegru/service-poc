@@ -34,7 +34,12 @@ server.listen("\\\\?\\pipe\\mypipe");
 
 ### Named pipes (Windows API)
 Able to secure the pipe, but not able to use it in an async manner. Requires polling/waiting even when using the asynchronous API functions [ReadFileEx](https://msdn.microsoft.com/library/aa365468).
-It might be possible to make it work well with node by using a native module or edge.js.
+
+To make the pipe "flow", the thread needs to be in "an alertable wait state". Using [WaitForSingleObjectEx](https://msdn.microsoft.com/library/ms687036) (and others), this is effectively a "Sleep" command which blocks the thread until when the pipe has something to say. (a rough implementation here: [named-pipe:test-service.js:126](https://github.com/stegru/service-poc/blob/named-pipe/test-service.js#L126)
+
+It might be possible to make it work well with node by using a native module (proven to support extra threads) or edge.js.
+
+**Good news**: The client does not require this, and can enjoy this named pipe using the built-in library.
 
 ### Anonymous Pipe
 This was probably the most secure approach, because an anonymous pipe can only be used by another process if it's been explicitly shared.
