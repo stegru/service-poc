@@ -14,27 +14,44 @@ var ref = require("ref"),
     winapi = require("./winapi.js");
 
 
-console.log("Hello from the client app", __filename);
+console.log("client app", __filename);
 console.log("whoami:", cp.execSync("whoami", { encoding: "utf-8" }));
 console.log(process.argv);
-var ip = process.argv[2];
-var port = parseInt(process.argv[3]);
+console.log("env", process.env.NODE_CHANNEL_FD);
+var pipeHandle = parseInt(process.argv[2]);
 
-console.log("connecting to ", ip + ":" + port);
+console.log("handles:", pipeHandle);
 
-var pipe = net.connect(port, ip, function () {
-    console.log("client connect");
-    pipe.write("hello!\n");
-});
-pipe.setEncoding("utf8");
-pipe.on("data", function (data) {
-    console.log("client data:", data);
-    pipe.write(data);
-});
+var pipeFD ;//= winapi.msvcrt._open_osfhandle(pipeHandle, 0);
+console.log("fd:", pipeFD);
 
-pipe.on("end", function (data) {
-    console.log("client end");
-});
+pipeFD = 3;
 
-setTimeout(console.log, 5000);
+if (true) {
 
+    var parentConnection = net.createConnection({fd: pipeFD, readable: true, writeable: true});
+    parentConnection.on("data", function (chunk) {
+        console.log("CHILD GOT:", chunk);
+        parentConnection.write(chunk);
+    });
+    parentConnection.on("close", function () {
+        console.log("closed");
+    });
+
+    parentConnection.write("aaa");
+
+
+} else {
+    var inputStream = fs.createReadStream(null, {fd: pipeFD});
+    var outputStream = fs.createWriteStream(null, {fd: pipeFD});
+
+    inputStream.on("data", function (chunk) {
+        console.log("CHILD GOT:", chunk);
+        outputStream.write(chunk);
+    });
+    inputStream.on("close", function () {
+        console.log("closed");
+    });
+
+    outputStream.write("hi");
+}

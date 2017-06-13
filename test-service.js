@@ -6,7 +6,8 @@ var fs = require("fs");
 
 // ref and winapi.js need to be loaded after the call to service.remove, otherwise the service takes too long to let
 // Windows know it's started.
-var ref, winapi, refArray;
+var ref, winapi, arrayType;
+;
 
 var serviceName = "test-service";
 
@@ -55,70 +56,70 @@ function runService() {
     var net = require("net");
     ref = require("ref");
     winapi = require("./winapi.js");
-    refArray = require("ref-array");
+    arrayType = require("ref-array")
 
     console.log("whoami:", cp.execSync("whoami", { encoding: "utf-8" }));
 
-    var pid = -1;
+    var connected = {
+        server: false,
+        client: false
+    };
+
+    var challenge = "CHALLENGE";
+
+    var pipeHandle;
+
+    var spawn = function () {
+        if (connected.server && connected.client) {
+            startUserProcess(pipeHandle);
+        }
+    };
 
     var server = net.createServer(function (socket) {
-        console.log("connected");
-        if (!checkSocketProcess(socket, pid)) {
-            socket.end("I don't like you.\n");
-            return;
-        }
+        console.log("got connection");
+        connected.server = true;
+        spawn();
         socket.write("hello");
         socket.on("data", function (data) {
             console.log("data", data.toString());
-            socket.write(data.toString("utf8", 1));
+            if (data.length <=  1) {
+                socket.close();
+            }
+            socket.write(data.toString("utf8").substr(1));
         });
     });
-
-    // Listening on 127.0.0.1 will allow only local connections.
-    // An ephemeral port is used instead of a fixed one to avoid listening on one that's already in use - whatever is
-    // provided is guaranteed to be unused. The port number is passed onto client. Randomisation is not required,
-    // because the port is known as soon as it's opened anyway.
-    server.listen(0, "127.0.0.1", function () {
-        var addr = server.address();
-        pid = startUserProcess(addr.address + " " + addr.port);
-        console.log("listening on ", addr);
+    server.maxConnections = 1;
+    var pipeName = "\\\\?\\pipe\\mypipe" + Math.random();
+    connect();
+    //connect();
+    server.listen(pipeName, function () {
+        console.log("listening");
     });
+    function connect() {
+        // connect to it
+        connectToPipe(pipeName, challenge, function (err, ret) {
+            if (err) {
+                throw err;
+            }
+            console.log("connected");
 
-}
+            pipeHandle = ret;
+            connected.client = true;
+            // Send the challenge
 
-/**
- * Checks if the given socket has the child process on the other end, by inspecting the TCP table.
- *
- * @param socket {Socket} The socket.
- * @param pid {Number} The expected pid.
- * @return {boolean} true if the child process is at the remote end of the socket.
- */
-function checkSocketProcess(socket, pid) {
-
-    // host to network byte order
-    var htons = function (n) {
-        return ((n & 0xff) << 8) | ((n >> 8) & 0xff);
-    };
-
-    // GetTcpTable2 returns addresses in host order (LE), but the ports are in network order.
-    var localPort = htons(socket.localPort);
-    var remotePort = htons(socket.remotePort);
-    var localhost = 0x0100007F;
-
-    var connections = getTcpConnections();
-    if (!connections) {
-        return false;
+            spawn();
+            setTimeout(function () {
+                if (!connected.server) {
+                    server.close();
+                    winapi.kernel32.CloseHandle(pipeHandle);
+                    pipeHandle = connected.client = undefined;
+                    runService();
+                }
+            }, 200);
+        });
     }
-
-    var remoteConnection = connections.filter(function (con) {
-        // When looking at the remote connection, the local port is this connection's remote port.
-        return con.pid === pid
-            && con.localAddress === localhost && con.remoteAddress === localhost
-            && con.localPort === remotePort && con.remotePort === localPort;
-    });
-
-    return remoteConnection.length === 1;
 }
+
 
 function checkSuccess(returnCode, msg) {
     if (returnCode) {
@@ -126,49 +127,49 @@ function checkSuccess(returnCode, msg) {
     }
 }
 
-/**
- * Returns an array of all established TCP connections on the system.
- *
- * @return {Array} localAddress/Port, remoteAddress/Port, and pid of each connection.
- */
-function getTcpConnections() {
+function connectToPipe(pipeName, challenge, callback) {
+    console.log("Connecting to ", pipeName);
+    var GENERIC_READ = 0x80000000;
+    var GENERIC_WRITE = 0x40000000;
+    var OPEN_EXISTING = 3;
 
-    var sizeBuffer = ref.alloc(winapi.types.ULONG);
+    var pipeAttributes = new winapi.SECURITY_ATTRIBUTES();
+    pipeAttributes.nLength = winapi.SECURITY_ATTRIBUTES.size;
+    pipeAttributes.lpSecurityDescriptor = ref.NULL;
+    // This is the magic to allow the pipe to be passed to the child process.
+    pipeAttributes.bInheritHandle = true;
 
-    // GetTcpTable2 is called first to get the required buffer size.
-    var ret = winapi.iphlpapi.GetTcpTable2(ref.NULL, sizeBuffer, false);
-
-    if (ret !== winapi.ERROR_INSUFFICIENT_BUFFER) {
-        checkSuccess(ret, "GetTcpTable2");
-        return null;
-    }
-
-    // Add extra space in case the table grew (the chance of this is slim, unless node stops to read this comment).
-    var size = sizeBuffer.deref() + 100;
-    sizeBuffer.writeUInt32LE(size);
-    var tableBuffer = new Buffer(size);
-
-    ret = winapi.iphlpapi.GetTcpTable2(tableBuffer, sizeBuffer, false);
-    checkSuccess(ret, "GetTcpTable2 #2");
-
-    var table = winapi.createMIBTcpTable2(tableBuffer);
-
-    var rowCount = table.dwNumEntries;
-    var tableTogo = [];
-    for (var r = 0; r < rowCount; r++) {
-        var row = table.table[r];
-        if (row.dwState === winapi.MIB_TCP_STATE_ESTAB) {
-            tableTogo.push({
-                localAddress: row.dwLocalAddr,
-                localPort: row.dwLocalPort & 0xFFFF, // "The upper 16 bits may contain uninitialized data." - MSDN
-                remoteAddress: row.dwRemoteAddr,
-                remotePort: row.dwRemotePort & 0xFFFF,
-                pid: row.dwOwningPid
+    console.log("waiting...");
+    winapi.kernel32.WaitNamedPipeA.async(pipeName, 0xffffffff, function () {
+        console.log("waited");
+        winapi.kernel32.CreateFileA.async(
+            new Buffer(pipeName + "\0"), 0xC0000000, 0, pipeAttributes.ref(), OPEN_EXISTING, 0, 0,
+            function (err, ret) {
+                checkSuccess(!ret, "CreateFileA");
+                if (err) {
+                    callback(err, null);
+                    return;
+                }
+                //
+                var r = winapi.kernel32.WriteFile(ret, new Buffer(challenge), challenge.length, ref.NULL, ref.NULL);
+                checkSuccess(!r, "WriteFile");
+                callback(err, ret);
             });
-        }
-    }
+    });
 
-    return tableTogo;
+}
+
+/**
+ * @param ... The handles
+ * @return A long pointer to the data.
+ */
+function inheritHandles() {
+    var success;
+    var HANDLE_FLAG_INHERIT = 1;
+
+    for (var n = 0; n < arguments.length; n++) {
+        success = winapi.kernel32.SetHandleInformation(arguments[n], HANDLE_FLAG_INHERIT, 1);
+    }
 }
 
 /**
@@ -176,34 +177,68 @@ function getTcpConnections() {
  *
  * https://blogs.msdn.microsoft.com/winsdk/2013/04/30/how-to-launch-a-process-interactively-from-a-windows-service/
  */
-function startUserProcess(pipeName) {
+function startUserProcess(pipeHandle) {
+    console.log("handle:", pipeHandle);
+    var command = new Buffer("node " + __dirname + "/user-app.js " + pipeHandle);
+//    var command = new Buffer("c:\\gpii\\gpii-app\\node_modules\\electron\\dist\\electron  --require c:\\gpii\\helpers\\limit-links.js c:\\gpii\\gpii-app\\main.js");
 
-    var command = new Buffer("node " + __dirname + "/user-app.js " + pipeName + "\0");
+    // Get the session ID of the console session.
+    var sessionId = winapi.kernel32.WTSGetActiveConsoleSessionId();
 
+    // Get the access token of whoever is logged into the session. Roughly, only a service can call this.
+    var tokenPtr = ref.alloc(winapi.types.HANDLE);
+    winapi.wtsapi32.WTSQueryUserToken(sessionId, tokenPtr);
+    var token = tokenPtr.deref();
+token = 0;
     try {
-        // Get the session ID of the console session.
-        var sessionId = winapi.kernel32.WTSGetActiveConsoleSessionId();
-
-        // Get the access token of whoever is logged into the session. Roughly, only a service can call this.
-        var tokenPtr = ref.alloc(winapi.types.HANDLE);
-        winapi.wtsapi32.WTSQueryUserToken(sessionId, tokenPtr);
-        var token = tokenPtr.deref();
+        var STARTF_USESTDHANDLES = 0x00000100;
 
         var startupInfo = new winapi.STARTUPINFOEX();
         startupInfo.ref().fill(0);
         startupInfo.cb = winapi.STARTUPINFOEX.size;
         startupInfo.lpDesktop = new Buffer("winsta0\\default\x00");
 
+        startupInfo.dwFlags = STARTF_USESTDHANDLES;
+
+        var i = -10 >>> 0,
+            o = -11 >>> 0,
+            e = -12 >>> 0;
+        startupInfo.hStdInput = winapi.kernel32.GetStdHandle (i);
+        startupInfo.hStdOutput = winapi.kernel32.GetStdHandle(o);
+        startupInfo.hStdError = winapi.kernel32.GetStdHandle (e);
+
+        //startupInfo.lpAttributeList = 0;
+        inheritHandles(
+            pipeHandle,
+            startupInfo.hStdInput,
+            startupInfo.hStdOutput,
+            startupInfo.hStdError
+        );
+
+
+        // Undocumented way of how the crt passes handles
+        var buf = new winapi.CHILD_STDIO();
+        buf.ref().fill(0);
+        buf.number_of_fds = 4;
+        buf.crt_flags[0] = 0x1;
+        buf.os_handle[0] = startupInfo.hStdInput;
+        buf.crt_flags[1] = 0x1;
+        buf.os_handle[1] = startupInfo.hStdOutput;
+        buf.crt_flags[2] = 0x1;
+        buf.os_handle[2] = startupInfo.hStdError;
+        buf.crt_flags[3] = 0x1;
+        buf.os_handle[3] = pipeHandle;
+        startupInfo.cbReserved2 = winapi.CHILD_STDIO.size;
+        startupInfo.lpReserved2 = buf.ref();
+
         var processInfo = new winapi.PROCESS_INFORMATION();
         processInfo.ref().fill(0);
 
         var ret = winapi.advapi32.CreateProcessAsUserA(token, ref.NULL, command, ref.NULL, ref.NULL,
-            0, winapi.EXTENDED_STARTUPINFO_PRESENT, ref.NULL, ref.NULL, startupInfo.ref(), processInfo.ref());
+            1, 0, ref.NULL, ref.NULL, startupInfo.ref(), processInfo.ref());
+        checkSuccess(!ret, "CreateProcessAsUserA");
         console.log(ret, processInfo);
-        return processInfo.dwProcessId;
     } finally {
         winapi.kernel32.CloseHandle(token);
     }
-
-
 }

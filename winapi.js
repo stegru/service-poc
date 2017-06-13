@@ -12,7 +12,7 @@ winapi.types = {
     PHANDLE: "void*",
     LP: "void*",
     SIZE_T: "ulong",
-    WORD: "uint",
+    WORD: "ushort",
     DWORD: "ulong",
     ULONG: "ulong",
     PULONG: "ulong*",
@@ -121,6 +121,15 @@ winapi.MIB_TCPROW2 = new Struct([
     [t.Enum, "dwOffloadState"]
 ]);
 
+// https://github.com/nodejs/node/blob/master/deps/uv/src/win/process-stdio.c#L33
+winapi.CHILD_STDIO = new Struct([
+    ["int", "number_of_fds"],
+    [arrayType("char", 4), "crt_flags"],
+    [arrayType(t.HANDLE, 4), "os_handle"]
+], {
+    packed: true
+});
+
 winapi.FileIOCompletionRoutine = function (callback) {
     return ffi.Callback(t.BOOL, [t.DWORD, t.DWORD, t.LP], callback);
 };
@@ -165,7 +174,7 @@ winapi.kernel32 = ffi.Library("kernel32", {
         t.BOOL, [ t.HANDLE, t.LP, t.DWORD, t.LP, t.LP ]
     ],
     "CreateFileA": [
-        t.HANDLE, [ "char*", t.DWORD, t.DWORD, t.LP, t.DWORD, t.DWORD, t.HANDLE ]
+        t.HANDLE, [ t.LPTSTR, t.DWORD, t.DWORD, t.LP, t.DWORD, t.DWORD, t.HANDLE ]
     ],
     "CreateEventA": [
         t.HANDLE, [ t.LP, t.BOOL, t.BOOL, t.LPTSTR ]
@@ -201,9 +210,39 @@ winapi.kernel32 = ffi.Library("kernel32", {
     "ConnectNamedPipe": [
         t.BOOL, [ t.HANDLE, t.LP ]
     ],
+
     // https://msdn.microsoft.com/library/ms687036
     "WaitForSingleObjectEx": [
         t.DWORD, [ t.HANDLE, t.DWORD, t.BOOL ]
+    ],
+    "DuplicateHandle": [
+        t.BOOL, [ t.HANDLE, t.HANDLE, t.HANDLE, t.LP, t.DWORD, t.BOOL, t.DWORD ]
+    ],
+    "GetCurrentProcess": [
+        t.HANDLE, [  ]
+    ],
+    "GetStdHandle": [
+        t.HANDLE, [ t.DWORD ]
+    ],
+    "SetHandleInformation": [
+        t.BOOL, [ t.HANDLE, t.DWORD, t.DWORD ]
+    ],
+    "CreateProcessW": [
+        t.BOOL, [
+            t.LPTSTR,  // LPCTSTR               lpApplicationName,
+            t.LPTSTR,  // LPTSTR                lpCommandLine,
+            t.LP,      // LPSECURITY_ATTRIBUTES lpProcessAttributes,
+            t.LP,      // LPSECURITY_ATTRIBUTES lpThreadAttributes,
+            t.BOOL,    // BOOL                  bInheritHandles,
+            t.DWORD,   // DWORD                 dwCreationFlags,
+            t.LP,      // LPVOID                lpEnvironment,
+            t.LP,      // LPCTSTR               lpCurrentDirectory,
+            t.LP,      // LPSTARTUPINFO         lpStartupInfo,
+            t.LP       // LPPROCESS_INFORMATION lpProcessInformation
+        ]
+    ],
+    "WaitNamedPipeA": [
+        t.BOOL, [ t.LPTSTR, t.DWORD ]
     ]
 
 });
